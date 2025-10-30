@@ -2,8 +2,10 @@ const express = require('express');
 const mongoose = require('mongoose');
 const http = require('http');
 const { Server } = require('socket.io');
+const jwt = require('jsonwebtoken');
 const dotenv = require('dotenv');
 const cors = require('cors');
+const User = require('./models/userModel');
 const authRoutes = require('./routes/authRoutes');
 const eventRoutes = require('./routes/eventRoutes');
 const swapRoutes = require('./routes/swapRoutes');
@@ -26,18 +28,65 @@ const io = new Server(server, {
   }
 });
 
+// Socket.IO authentication middleware
+io.use(async (socket, next) => {
+  try {
+    const token = socket.handshake.query.token;
+    
+    if (!token) {
+      return next(new Error('Authentication error: No token provided'));
+    }
+
+    // Verify token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    
+    // Get user from the token
+    const user = await User.findById(decoded.id).select('-password');
+    
+    if (!user) {
+      return next(new Error('Authentication error: User not found'));
+    }
+
+    // Attach the user to the socket
+    socket.user = user;
+    next();
+  } catch (error) {
+    console.error('Socket authentication error:', error.message);
+    next(new Error('Authentication error: Invalid token'));
+  }
+});
+
 // Socket.IO connection handling
 io.on('connection', (socket) => {
-  console.log('A user connected');
+  console.log(`User connected: ${socket.user._id}`);
+  
+  // Join user's personal room for private messages
+  socket.join(socket.user._id.toString());
   
   socket.on('disconnect', () => {
-    console.log('A user disconnected');
+    console.log(`User disconnected: ${socket.user._id}`);
+  });
+
+  // Handle any custom events here
+  socket.on('error', (error) => {
+    console.error('Socket error:', error);
   });
 });
 
+// CORS Configuration
+const corsOptions = {
+  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+};
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
+
+// Handle preflight requests
+app.options('*', cors(corsOptions));
 
 // MongoDB Connection Function
 const connectDB = async () => {
@@ -58,6 +107,12 @@ connectDB();
 
 // Make io accessible to routes
 app.set('io', io);
+
+// Middleware to make io available in request objects
+app.use((req, res, next) => {
+  req.io = io;
+  next();
+});
 
 // Simple test route
 app.get('/', (req, res) => {

@@ -65,6 +65,16 @@ const createSwapRequest = async (req, res) => {
     await mySlot.save();
     await theirSlot.save();
 
+    // Emit the notification to the receiver
+    const receiverId = theirSlot.owner;
+    const senderName = req.user.name;
+
+    // Emit the event to the receiver's private room
+    req.io.to(receiverId.toString()).emit('new_swap_request', { 
+      message: `You have a new swap request from ${senderName}!`,
+      swapRequestId: swapRequest._id
+    });
+
     res.status(201).json(swapRequest);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -174,14 +184,20 @@ const respondToSwapRequest = async (req, res) => {
 
       // If no overlaps, proceed with the swap
       swapRequest.status = 'ACCEPTED';
-      const originalOfferedOwner = offeredSlot.owner;
-      const originalRequestedOwner = requestedSlot.owner;
+      
+      // Store the time of the offered slot in a temporary variable
+      const tempStartTime = offeredSlot.startTime;
+      const tempEndTime = offeredSlot.endTime;
 
-      // Swap the owners
-      offeredSlot.owner = originalRequestedOwner;
-      requestedSlot.owner = originalOfferedOwner;
+      // Set the offered slot's time to the requested slot's time
+      offeredSlot.startTime = requestedSlot.startTime;
+      offeredSlot.endTime = requestedSlot.endTime;
 
-      // Update statuses
+      // Set the requested slot's time to the offered slot's (original) time
+      requestedSlot.startTime = tempStartTime;
+      requestedSlot.endTime = tempEndTime;
+
+      // Set both slots' status back to 'BUSY'
       offeredSlot.status = 'BUSY';
       requestedSlot.status = 'BUSY';
 

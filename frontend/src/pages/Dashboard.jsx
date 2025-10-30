@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { formatLocalDate } from '../utils/dateUtils';
+import { toast } from 'react-hot-toast';
+import './Dashboard.css';
 
 const Dashboard = () => {
   const [events, setEvents] = useState([]);
@@ -12,10 +14,10 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [notificationCount, setNotificationCount] = useState(0);
-  const { logout, user, loading: authLoading } = useAuth();
+  const { logout, user, loading: authLoading, socket } = useAuth();
   const navigate = useNavigate();
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       // Fetch events
       const eventsResponse = await api.get('/events/my-events');
@@ -27,7 +29,34 @@ const Dashboard = () => {
     } catch (error) {
       console.error('Error fetching data:', error);
     }
-  };
+  }, []);
+
+  // Set up socket event listeners for real-time updates
+  useEffect(() => {
+    if (socket) {
+      console.log('--- Dashboard LISTENER: Setting up socket listeners...');
+
+      const handleRefreshData = (data) => {
+        console.log('--- Dashboard LISTENER: Received event, refreshing data!', {
+          event: data?.type || 'unknown_event',
+          timestamp: new Date().toISOString(),
+          data: data
+        });
+        fetchData();
+      };
+
+     
+      socket.on('new_swap_request', handleRefreshData);
+      socket.on('swap_response', handleRefreshData);
+
+     
+      return () => {
+        console.log('--- Dashboard LISTENER: Cleaning up socket listeners');
+        socket.off('new_swap_request', handleRefreshData);
+        socket.off('swap_response', handleRefreshData);
+      };
+    }
+  }, [socket, fetchData]); 
 
   useEffect(() => {
     fetchData();
@@ -48,9 +77,24 @@ const Dashboard = () => {
       setTitle('');
       setStartTime('');
       setEndTime('');
-      fetchEvents();
+      
+      
+      toast.success('Event created successfully!');
+      
+      
+      await fetchData();
     } catch (error) {
-      setError(error.response?.data?.message || 'Failed to create event');
+      console.error('Create event error:', error);
+      if (error.data && error.data.message) {
+        
+        toast.error(error.data.message);
+        setError(error.data.message);
+      } else {
+      
+        const errorMessage = error.response?.data?.message || 'Event creation failed. Please check the times.';
+        toast.error(errorMessage);
+        setError(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -79,212 +123,190 @@ const Dashboard = () => {
   const localDateTime = `${year}-${month}-${day}T${hours}:${minutes}`;
 
   return (
-    <div className="container">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-            <h1>Dashboard</h1>
-            <button
-              onClick={() => navigate('/marketplace')}
-              style={{
-                padding: '6px 12px',
-                backgroundColor: '#28a745',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '14px',
-              }}
-            >
-              Go to Marketplace
-            </button>
-          </div>
-          <div>
-            <span style={{ marginRight: '15px' }}>
-              {authLoading ? 'Loading...' : `Welcome, ${user?.name || 'User'}`}
-            </span>
-            <button
-              onClick={handleLogout}
-              style={{
-                padding: '8px 16px',
-                backgroundColor: '#dc3545',
-                color: 'white',
-                border: 'none',
-                cursor: 'pointer',
-              }}
-            >
-              Logout
-            </button>
-          </div>
-        </div>
-        
-        {notificationCount > 0 && (
-          <div 
-            style={{
-              backgroundColor: '#007bff',
-              color: 'white',
-              textAlign: 'center',
-              padding: '12px',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-              transition: 'background-color 0.2s',
-              width: '100%',
-              margin: '0 auto'
-            }}
-            onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#0056b3'}
-            onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#007bff'}
-            onClick={() => navigate('/requests')}
+    <div className="dashboard-container">
+      <header className="dashboard-header">
+        <div className="header-left">
+          <h1>Dashboard</h1>
+          <button
+            className="button outline"
+            onClick={() => navigate('/marketplace')}
+            aria-label="Go to Marketplace"
           >
-            🔔 You have {notificationCount} new swap request{notificationCount !== 1 ? 's' : ''}! Click here to review them. 🔔
-          </div>
-        )}
-      </div>
+            <span>📋</span> Marketplace
+          </button>
+        </div>
+        <div className="header-right">
+          <span className="text-secondary">
+            {authLoading ? 'Loading...' : `👋 Welcome, ${user?.name || 'User'}`}
+          </span>
+          <button
+            className="button danger"
+            onClick={handleLogout}
+            aria-label="Logout"
+          >
+            <span>🚪</span> Logout
+          </button>
+        </div>
+      </header>
+      
+      {notificationCount > 0 && (
+        <button 
+          className="notification-banner"
+          onClick={() => navigate('/requests')}
+          aria-label="View notifications"
+        >
+          <span>🔔</span>
+          You have {notificationCount} new swap request{notificationCount !== 1 ? 's' : ''}
+          <span className="ml-2">View &rarr;</span>
+        </button>
+      )}
 
-      <div style={{ marginBottom: '30px', padding: '20px', border: '1px solid #ddd' }}>
-        <h2>Create New Event</h2>
+      <div className="card">
+        <div className="flex justify-between items-center mb-6">
+          <h2>Create New Event</h2>
+          <span className="text-secondary">Step 1 of 2</span>
+        </div>
         <form onSubmit={handleCreateEvent}>
-          <div style={{ marginBottom: '15px' }}>
-            <label htmlFor="title" style={{ display: 'block', marginBottom: '5px' }}>
-              Title
-            </label>
+          <div className="form-group">
+            <label htmlFor="title">Event Title</label>
             <input
               type="text"
               id="title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               required
-              style={{ width: '100%', padding: '8px', fontSize: '16px' }}
+              placeholder="E.g., Team Meeting, Doctor's Appointment"
+              className="w-full"
             />
           </div>
-          <div style={{ marginBottom: '15px' }}>
-            <label htmlFor="startTime" style={{ display: 'block', marginBottom: '5px' }}>
-              Start Time
-            </label>
-            <input
-              type="datetime-local"
-              id="startTime"
-              value={startTime}
-              onChange={(e) => setStartTime(e.target.value)}
-              required
-              min={localDateTime}
-              style={{ width: '100%', padding: '8px', fontSize: '16px' }}
-            />
-          </div>
-          <div style={{ marginBottom: '15px' }}>
-            <label htmlFor="endTime" style={{ display: 'block', marginBottom: '5px' }}>
-              End Time
-            </label>
-            <input
-              type="datetime-local"
-              id="endTime"
-              value={endTime}
-              onChange={(e) => setEndTime(e.target.value)}
-              required
-              min={startTime}
-              style={{ width: '100%', padding: '8px', fontSize: '16px' }}
-            />
-          </div>
-          {error && (
-            <div style={{ color: 'red', marginBottom: '15px' }}>
-              {error}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div className="form-group">
+              <label htmlFor="startTime">
+                <span className="flex items-center gap-2">
+                  <span>📅</span>
+                  <span>Start Time</span>
+                </span>
+              </label>
+              <input
+                type="datetime-local"
+                id="startTime"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                min={localDateTime}
+                required
+                className="w-full"
+              />
             </div>
-          )}
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              padding: '10px 20px',
-              fontSize: '16px',
-              backgroundColor: '#007bff',
-              color: 'white',
-              border: 'none',
-              cursor: loading ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {loading ? 'Creating...' : 'Create Event'}
-          </button>
+            <div className="form-group">
+              <label htmlFor="endTime">
+                <span className="flex items-center gap-2">
+                  <span>⏰</span>
+                  <span>End Time</span>
+                </span>
+              </label>
+              <input
+                type="datetime-local"
+                id="endTime"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                min={startTime || localDateTime}
+                required
+                className="w-full"
+              />
+            </div>
+          </div>
+          
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            {error && (
+              <p className="text-error flex-1">
+                <span className="mr-2">⚠️</span>
+                {error}
+              </p>
+            )}
+            <button
+              type="submit"
+              className={`button primary ${loading ? 'opacity-75' : ''} w-full sm:w-auto`}
+              disabled={loading}
+              aria-busy={loading}
+            >
+              {loading ? (
+                <>
+                  <span className="animate-spin mr-2">⏳</span>
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <span>📅</span>
+                  Create Event
+                </>
+              )}
+            </button>
+          </div>
         </form>
       </div>
       
-      <div style={{ marginTop: '40px' }}>
-        <h2>My Events</h2>
+      <div className="mt-40">
+        <div className="flex justify-between items-center mb-6">
+          <h2>My Events</h2>
+          <span className="text-secondary">{events.length} event{events.length !== 1 ? 's' : ''} total</span>
+        </div>
+        
         {events.length === 0 ? (
-          <p>No events yet. Create your first event above!</p>
+          <div className="card text-center py-12">
+            <div className="text-5xl mb-4">📅</div>
+            <h3 className="text-xl mb-2">No events yet</h3>
+            <p className="text-secondary max-w-md mx-auto">
+              You haven't created any events. Click the button above to schedule your first event!
+            </p>
+          </div>
         ) : (
-          <div>
+          <div className="event-list">
             {events.map((event) => (
-              <div
-                key={event._id}
-                style={{
-                  padding: '15px',
-                  marginBottom: '15px',
-                  border: '1px solid #ddd',
-                  backgroundColor: event.status === 'SWAP_PENDING' ? '#f0f0f0' : 'white',
-                  color: '#333',  // Dark gray color for better readability
-                }}
-              >
-                <h3 style={{ color: '#000' }}>{event.title}</h3>
-                <p>
-                  <strong>Start:</strong> {formatLocalDate(event.startTime)}
-                </p>
-                <p>
-                  <strong>End:</strong> {formatLocalDate(event.endTime)}
-                </p>
-                <p>
-                  <strong>Status:</strong>{' '}
-                  <span
-                    style={{
-                      padding: '4px 8px',
-                      backgroundColor:
-                        event.status === 'BUSY'
-                          ? '#ffc107'
-                          : event.status === 'SWAPPABLE'
-                          ? '#28a745'
-                          : '#6c757d',
-                      color: 'white',
-                      borderRadius: '4px',
-                    }}
-                  >
-                    {event.status}
+              <div key={event._id} className="event-card">
+                <div className="flex justify-between items-start">
+                  <h3 className="truncate">{event.title}</h3>
+                  <span className={`status ${event.status === 'SWAPPABLE' ? 'available' : 'unavailable'}`}>
+                    {event.status === 'SWAPPABLE' ? '✅ Available' : '⏳ Unavailable'}
                   </span>
-                </p>
-                {event.status === 'BUSY' && (
-                  <button
-                    onClick={() => handleStatusChange(event._id, 'SWAPPABLE')}
-                    style={{
-                      padding: '8px 16px',
-                      backgroundColor: '#28a745',
-                      color: 'white',
-                      border: 'none',
-                      cursor: 'pointer',
-                      marginTop: '10px',
-                    }}
-                  >
-                    Make Swappable
-                  </button>
-                )}
-                {event.status === 'SWAPPABLE' && (
-                  <button
-                    onClick={() => handleStatusChange(event._id, 'BUSY')}
-                    style={{
-                      padding: '8px 16px',
-                      backgroundColor: '#ffc107',
-                      color: 'white',
-                      border: 'none',
-                      cursor: 'pointer',
-                      marginTop: '10px',
-                    }}
-                  >
-                    Make Busy
-                  </button>
-                )}
-                {event.status === 'SWAP_PENDING' && (
-                  <p style={{ color: '#6c757d', marginTop: '10px' }}>
-                    🔒 This event is locked in a pending swap request
+                </div>
+                
+                <div className="mt-4 space-y-2">
+                  <p title={new Date(event.startTime).toLocaleString()}>
+                    <span className="text-secondary">📅</span>
+                    <span className="ml-2">{formatLocalDate(event.startTime)}</span>
                   </p>
-                )}
+                  <p title={new Date(event.endTime).toLocaleString()}>
+                    <span className="text-secondary">⏰</span>
+                    <span className="ml-2">{formatLocalDate(event.endTime)}</span>
+                  </p>
+                </div>
+                
+                <div className="mt-4 pt-4 border-t border-border-color">
+                  {event.status === 'BUSY' && (
+                    <button
+                      className="button outline w-full"
+                      onClick={() => handleStatusChange(event._id, 'SWAPPABLE')}
+                    >
+                      <span>🔄</span>
+                      Make Available
+                    </button>
+                  )}
+                  {event.status === 'SWAPPABLE' && (
+                    <button
+                      className="button outline w-full"
+                      onClick={() => handleStatusChange(event._id, 'BUSY')}
+                    >
+                      <span>⏸️</span>
+                      Mark as Unavailable
+                    </button>
+                  )}
+                  {event.status === 'SWAP_PENDING' && (
+                    <div className="text-center py-2 px-3 bg-yellow-500/10 rounded text-yellow-400 text-sm">
+                      <span className="inline-block mr-2">🔒</span>
+                      Pending swap request
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
           </div>

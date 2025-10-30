@@ -13,3 +13,21 @@ export const formatLocalDate = (utcDateString) => {
   
   return `${day}/${month}/${year}, ${hours}:${minutes}:${seconds}`;
 };
+
+/**
+ * Formats a date string into a time string (HH:MM AM/PM)
+ * @param {string|Date} dateString - The date string or Date object to format
+ * @returns {string} Formatted time string (e.g., "02:30 PM")
+ */
+export const formatTime = (dateString) => {
+  if (!dateString) return '';
+  
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return ''; // Handle invalid dates
+  
+  return date.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  });
+};

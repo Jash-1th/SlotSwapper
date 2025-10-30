@@ -12,13 +12,35 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-
-    const result = await login(email, password);
-
-    if (result.success) {
-      navigate('/dashboard');
-    } else {
-      setError(result.message);
+    
+    console.log('Login form submitted');
+    
+    // Basic validation
+    if (!email || !password) {
+      setError('Please enter both email and password');
+      return;
+    }
+    
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+    
+    try {
+      console.log('Calling login function...');
+      const result = await login(email, password);
+      console.log('Login result:', result);
+      
+      if (result.success) {
+        console.log('Login successful, navigating to dashboard');
+        navigate('/dashboard');
+      } else {
+        console.log('Login failed with message:', result.message);
+        setError(result.message || 'Login failed. Please try again.');
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      setError('An unexpected error occurred. Please try again.');
     }
   };
 
