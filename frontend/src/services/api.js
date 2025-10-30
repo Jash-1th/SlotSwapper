@@ -1,12 +1,13 @@
 import axios from 'axios';
 
 // Set default base URL with fallback
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-console.log('API Base URL:', API_URL);
+const API_ROOT_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+console.log('API Base URL:', API_ROOT_URL);
+const API_BASE_URL = `${API_ROOT_URL}/api`;
 
 // Create axios instance with default config
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
