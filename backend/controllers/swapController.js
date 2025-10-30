@@ -130,14 +130,58 @@ const respondToSwapRequest = async (req, res) => {
     }
 
     if (acceptance === true) {
-      swapRequest.status = 'ACCEPTED';
+      // Check for overlap for the receiver (current user)
+      const receiverOverlap = await Event.findOne({
+        _id: { $ne: requestedSlot._id }, // Exclude the slot being given away
+        owner: req.user.id,
+        $or: [
+          {
+            startTime: { $lt: offeredSlot.endTime },
+            endTime: { $gt: offeredSlot.startTime }
+          }
+        ]
+      }).session(session);
 
+      // Check for overlap for the requester
+      const requesterOverlap = await Event.findOne({
+        _id: { $ne: offeredSlot._id }, // Exclude the slot being given away
+        owner: swapRequest.requester,
+        $or: [
+          {
+            startTime: { $lt: requestedSlot.endTime },
+            endTime: { $gt: requestedSlot.startTime }
+          }
+        ]
+      }).session(session);
+
+      if (receiverOverlap || requesterOverlap) {
+        // Reject the swap if either user would have an overlap
+        swapRequest.status = 'REJECTED';
+        offeredSlot.status = 'SWAPPABLE';
+        requestedSlot.status = 'SWAPPABLE';
+
+        await swapRequest.save({ session });
+        await offeredSlot.save({ session });
+        await requestedSlot.save({ session });
+
+        await session.commitTransaction();
+        session.endSession();
+
+        return res.status(400).json({ 
+          message: 'Swap failed. The new slot overlaps with an existing event in one of the calendars.' 
+        });
+      }
+
+      // If no overlaps, proceed with the swap
+      swapRequest.status = 'ACCEPTED';
       const originalOfferedOwner = offeredSlot.owner;
       const originalRequestedOwner = requestedSlot.owner;
 
+      // Swap the owners
       offeredSlot.owner = originalRequestedOwner;
       requestedSlot.owner = originalOfferedOwner;
 
+      // Update statuses
       offeredSlot.status = 'BUSY';
       requestedSlot.status = 'BUSY';
 

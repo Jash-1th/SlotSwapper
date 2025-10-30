@@ -10,10 +10,27 @@ const createEvent = async (req, res) => {
 
     const now = new Date();
     const startDate = new Date(startTime);
+    const endDate = new Date(endTime);
     const oneMinuteAgo = new Date(now.getTime() - 60000);
     
     if (startDate < oneMinuteAgo) {
       return res.status(400).json({ message: 'Cannot create an event in the past' });
+    }
+
+    // Check for overlapping events
+    const overlappingEvent = await Event.findOne({
+      owner: req.user.id,
+      $or: [
+        // Existing event starts before the new one ends AND ends after the new one starts
+        { 
+          startTime: { $lt: endDate },
+          endTime: { $gt: startDate }
+        }
+      ]
+    });
+
+    if (overlappingEvent) {
+      return res.status(400).json({ message: 'This event overlaps with an existing event in your calendar.' });
     }
 
     const event = await Event.create({
@@ -52,13 +69,30 @@ const updateEvent = async (req, res) => {
 
     const { title, startTime, endTime, status } = req.body;
 
-    if (startTime) {
+    if (startTime || endTime) {
       const now = new Date();
-      const startDate = new Date(startTime);
+      const newStartTime = startTime ? new Date(startTime) : event.startTime;
+      const newEndTime = endTime ? new Date(endTime) : event.endTime;
       const oneMinuteAgo = new Date(now.getTime() - 60000);
       
-      if (startDate < oneMinuteAgo) {
+      if (newStartTime < oneMinuteAgo) {
         return res.status(400).json({ message: 'Cannot set event start time in the past' });
+      }
+
+      // Check for overlapping events, excluding the current event
+      const overlappingEvent = await Event.findOne({
+        _id: { $ne: req.params.id }, // Exclude current event
+        owner: req.user.id,
+        $or: [
+          { 
+            startTime: { $lt: newEndTime },
+            endTime: { $gt: newStartTime }
+          }
+        ]
+      });
+
+      if (overlappingEvent) {
+        return res.status(400).json({ message: 'This update would create an overlap with an existing event in your calendar.' });
       }
     }
 
