@@ -120,17 +120,21 @@ export const AuthProvider = ({ children }) => {
       
       if (error) {
         console.error('Login API error:', error);
+        const errorMessage = error.data?.message || error.message || 'Login failed. Please check your credentials.';
+        toast.error(errorMessage);
         return {
           success: false,
-          message: error.message || 'Login failed. Please check your credentials and try again.',
+          message: errorMessage,
         };
       }
       
       if (!data || !data.token) {
-        console.error('No token in response:', data);
+        const errorMessage = 'Login failed. Invalid server response.';
+        console.error(errorMessage, data);
+        toast.error(errorMessage);
         return {
           success: false,
-          message: 'Login failed. Invalid server response.'
+          message: errorMessage
         };
       }
       
