@@ -16,13 +16,37 @@ dotenv.config();
 // Initialize Express app
 const app = express();
 
+// CORS Configuration
+const allowedOrigins = [
+  process.env.CLIENT_URL, // Should be 'https://slot-swapper.netlify.app'
+  'http://localhost:5173'  // For local testing
+];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Check if the incoming origin is in our whitelist
+    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+      // Allow the request
+      callback(null, true);
+    } else {
+      // Block the request
+      console.error(`CORS Blocked: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true, // Allow cookies/headers
+};
+
+// Apply CORS middleware
+app.use(cors(corsOptions));
+
 // Create HTTP server
 const server = http.createServer(app);
 
-// Initialize Socket.IO
+// Initialize Socket.IO with the same CORS configuration
 const io = new Server(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: allowedOrigins,
     methods: ['GET', 'POST'],
     credentials: true
   }
@@ -73,16 +97,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// CORS Configuration
-const corsOptions = {
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
-};
-
 // Middleware
-app.use(cors(corsOptions));
 app.use(express.json());
 
 // Handle preflight requests
